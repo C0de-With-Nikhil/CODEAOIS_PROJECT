@@ -1,0 +1,2 @@
+[console_scripts]
+codeaois = codeaois.cli.main:main
