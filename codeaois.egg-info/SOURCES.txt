@@ -1,3 +1,4 @@
+README.md
 pyproject.toml
 setup.py
 codeaois/__init__.py
@@ -12,6 +13,8 @@ codeaois/agents/3d_agent.py
 codeaois/agents/coder_agent.py
 codeaois/agents/data_science_agent.py
 codeaois/agents/database_agent.py
+codeaois/agents/debugging_agent.py
+codeaois/agents/devops_agent.py
 codeaois/agents/git_agent.py
 codeaois/agents/tester_agent.py
 codeaois/brain/__init__.py

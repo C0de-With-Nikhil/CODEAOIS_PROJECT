@@ -29,17 +29,22 @@ def call_openrouter(system_prompt: str, user_prompt: str, intent: str = "chat", 
 
     if intent in ["code", "data_science"]:
         models_to_try = [
+            "openai/gpt-oss-120b:free",
             "stepfun/step-3.5-flash:free",
             "qwen/qwen3-vl-30b-a3b-thinking:free",
             "qwen/qwen3-vl-235b-a22b-thinking:free",
-            "stepfun/step-3.5-flash:free"
+            "meta-llama/llama-3.1-8b-instruct:free",
+            "mistralai/mistral-7b-instruct:free"
         ]
     else:
         models_to_try = [
             "liquid/lfm-2.5-1.2b-thinking:free",
             "arcee-ai/trinity-large-preview:free",
             "liquid/lfm-2.5-1.2b-instruct:free",
-            "arcee-ai/trinity-mini:free"
+            "arcee-ai/trinity-mini:free",
+            "meta-llama/llama-3.1-8b-instruct:free",
+            "qwen/qwen2.5-7b-instruct:free",
+            "mistralai/mistral-7b-instruct:free"
         ]
 
     headers = {
