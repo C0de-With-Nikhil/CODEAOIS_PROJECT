@@ -1,0 +1,33 @@
+{
+  "name": "codeaois",
+  "publisher": "nikhil",
+  "version": "0.1.0",
+  "engines": {"vscode": "^1.70.0"},
+  "activationEvents": [
+    "onView:codeaois.chatView"
+  ],
+  "main": "extension.js",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/C0de-With-Nikhil/CodeAOIS.git"
+  },
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "codeaois-sidebar",
+          "title": "CodeAOIS"
+        }
+      ]
+    },
+    "views": {
+      "codeaois-sidebar": [
+        {
+          "type": "webview",
+          "id": "codeaois.chatView",
+          "name": "AI Developer"
+        }
+      ]
+    }
+  }
+}

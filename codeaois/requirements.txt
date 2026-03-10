@@ -1,0 +1,3 @@
+# Run from this
+
+python -m cli.main "create flask api"

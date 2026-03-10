@@ -1,0 +1,9 @@
+# ignore virtual environment
+aois_env/
+# python artifacts
+__pycache__/
+*.pyc
+# other common
+*.egg-info/
+.env
+
