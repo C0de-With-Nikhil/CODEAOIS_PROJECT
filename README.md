@@ -199,6 +199,22 @@ CodeAOIS is currently an **experimental research project** and under active deve
 
 ---
 
+# Installation
+```bash
+pip install codeaois
+```
+
+# Usage 
+```bash
+codeaois
+```
+### 2. The Master Blueprint (`setup.py`)
+Now we need the configuration file. You might already have a basic one from earlier, but we need the production-ready version. 
+
+Create or overwrite the `setup.py` file in your root `~/codeaois_project/` folder with this exact code:
+
+```python
+
 # 👨‍💻 Author
 
 Created by **Nikhil Nagar**

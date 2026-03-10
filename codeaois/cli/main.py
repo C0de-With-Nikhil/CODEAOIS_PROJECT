@@ -4,12 +4,17 @@ import sys
 import os
 import importlib 
 
-# --- NEW: THE PROFESSIONAL CLI ENGINE ---
+# --- CLI UI ENGINES ---
 from prompt_toolkit import PromptSession
 from prompt_toolkit.completion import WordCompleter
 from prompt_toolkit.auto_suggest import AutoSuggestFromHistory
 from prompt_toolkit.formatted_text import HTML
+from rich.console import Console
+from rich.markdown import Markdown
+from rich.panel import Panel
+from rich.table import Table # <-- ADD THIS!
 
+# --- CODEAOIS MODULES ---
 from codeaois.core.planner import analyze_intent, get_installed_agents
 from codeaois.core.context import extract_file_context
 from codeaois.brain.scanner import scan_project_structure
@@ -20,6 +25,7 @@ from codeaois.utils.file_writer import extract_and_save_code
 from codeaois.agents.git_agent import auto_commit
 from codeaois.core.marketplace import install_agent
 from codeaois.core.memory import load_profile, create_profile, load_history, save_history, clear_history_data, clear_profile_data
+from codeaois.agents.tester_agent import run_test
 
 # Print Colors
 C_BLUE = '\033[94m'
@@ -30,7 +36,10 @@ C_CYAN = '\033[96m'
 C_RESET = '\033[0m'
 C_BOLD = '\033[1m'
 
+# Globals
+console = Console()
 chat_history = load_history()
+active_file = None  # The OS remembers the file you are working on
 
 # --- CONFIGURE AUTOCOMPLETE OPTIONS ---
 AVAILABLE_COMMANDS = [
@@ -68,11 +77,11 @@ def show_status():
     print(" 🟢 Model Router: Liquid/Arcee (Chat) | Step/Qwen (Code)")
     print(" 🟢 Project Brain: Active")
     print(" 🟢 Plugin Architecture: Dynamic Auto-Discovery")
-    print(" 🟢 UI Engine: Prompt Toolkit (Ghost Text Active)")
+    print(" 🟢 UI Engine: Prompt Toolkit & Rich Markdown")
     print(" 🟢 Security Dry-Run: Enabled\n")
 
 def process_command(user_input: str):
-    global chat_history
+    global chat_history, active_file
     clean_input = user_input.lower().strip()
     
     if clean_input in ["/exit", "/quit", "exit", "quit"]:
@@ -105,23 +114,59 @@ def process_command(user_input: str):
 
     if clean_input == "/marketplace":
         installed = get_installed_agents()
-        print(f"\n{C_PURPLE}🛒 CODEAOIS AGENT MARKETPLACE{C_RESET}")
         
+        # --- 1. THE EXPANDED AGENT REGISTRY ---
         available_agents = {
-            "database": "SQL, NoSQL, ORM optimization",
-            "3d": "Three.js, WebGL, Unity scripts",
-            "debugging": "Deep stack trace analysis",
-            "devops": "Docker, CI/CD, Terraform"
+            "database": {
+                "desc": "SQL, NoSQL, ORM",
+                "summary": "Writes optimized queries, designs schemas, and handles database migrations."
+            },
+            "3d": {
+                "desc": "Three.js, WebGL, Unity",
+                "summary": "Generates complex 3D math, shaders, and game engine scripts."
+            },
+            "debugging": {
+                "desc": "Deep Error Analysis",
+                "summary": "Reads crash logs, finds root causes, and suggests exact line-by-line fixes."
+            },
+            "devops": {
+                "desc": "Docker, CI/CD, AWS",
+                "summary": "Writes Dockerfiles, GitHub Actions, and infrastructure automation."
+            }
         }
         
-        for agent, desc in available_agents.items():
+        # --- 2. BUILD THE STUNNING UI TABLE ---
+        print("\n")
+        table = Table(title="🛒 CodeAOIS Agent Marketplace", border_style="purple", header_style="bold cyan")
+        table.add_column("Agent Name", style="bold white", no_wrap=True)
+        table.add_column("Status", justify="center")
+        table.add_column("Core Focus", style="magenta")
+        table.add_column("Agent Capabilities", style="dim")
+        
+        for agent, info in available_agents.items():
             if agent in installed:
-                status = f"{C_GREEN}[Installed]{C_RESET}"
+                status = "[bold green]✓ Installed[/bold green]"
             else:
-                status = f"{C_YELLOW}[Not Installed]{C_RESET}"
-            print(f"  - {agent:<10} {status:<24} ({desc})")
+                status = "[bold yellow]○ Available[/bold yellow]"
+                
+            table.add_row(agent.title(), status, info["desc"], info["summary"])
             
-        print(f"\nTo install an agent, type: {C_YELLOW}/install <agent_name>{C_RESET}\n")
+        console.print(table)
+        print("\n")
+        
+        # --- 3. THE INTERACTIVE AUTO-INSTALLER ---
+        choice = input(f"{C_BLUE}Enter an agent name to install (or press Enter to close): {C_RESET}").strip().lower()
+        
+        if choice in available_agents:
+            if choice in installed:
+                print(f"{C_YELLOW}⚠️ You already have the {choice.title()} Agent installed!{C_RESET}\n")
+            else:
+                print(f"{C_GREEN}⬇️ Downloading {choice.title()} Agent from registry...{C_RESET}")
+                install_agent(choice)
+                print(f"{C_GREEN}✅ {choice.title()} Agent successfully integrated into the OS!{C_RESET}\n")
+        elif choice:
+            print(f"{C_YELLOW}⚠️ Agent '{choice}' not found in the marketplace.{C_RESET}\n")
+            
         return
 
     if clean_input.startswith("/install"):
@@ -143,7 +188,16 @@ def process_command(user_input: str):
         user_name = profile["name"] if profile else "Developer"
         user_role = profile["role"] if profile else "Coding"
         
-        system_prompt = f"You are CodeAOIS, an advanced AI Developer OS. The user's name is {user_name} and they focus on {user_role}. Be helpful, concise, and conversational."
+        project_tree = scan_project_structure()
+        
+        system_prompt = (
+            f"You are CodeAOIS, an advanced AI Developer OS running directly in the user's terminal. "
+            f"The user's name is {user_name} ({user_role}).\n"
+            f"CRITICAL: You have FULL access to the user's file system. Here is their current project structure:\n{project_tree}\n"
+            f"Currently focused file: {active_file if active_file else 'None'}\n"
+            f"If the user asks 'can you see my code' or asks about their files, say YES and reference the project structure. "
+            f"DO NOT EVER say you cannot view files."
+        )
         
         response = call_openrouter(system_prompt, user_input, intent="chat", history=chat_history)
         print(f"\n{C_BOLD}🤖 CodeAOIS:{C_RESET} {response}\n")
@@ -164,7 +218,17 @@ def process_command(user_input: str):
             print(f"{C_PURPLE}🔌 [Plugin Mode]{C_RESET} Engaging specialized {plugin_name} Agent...")
             
         target_file, file_context = extract_file_context(user_input)
+        
+        # ACTIVE FILE MEMORY
+        if not target_file and active_file:
+            print(f"   🔗 Auto-locking to previous file: {active_file}")
+            target_file = active_file
+            if os.path.exists(active_file):
+                with open(active_file, "r", encoding="utf-8") as f:
+                    file_context = f.read()
+
         if target_file:
+            active_file = target_file
             print(f"   📂 Target file locked: {target_file}")
             
         print(f"   🧠 Scanning project context...")
@@ -175,6 +239,7 @@ def process_command(user_input: str):
             
         print(f"   {C_YELLOW}⚡ Generating code...{C_RESET}")
         
+        # --- GENERATE THE CODE_RESULT VARIABLE ---
         if intent == "data_science":
             code_result = generate_ds_code(user_input, full_context)
         elif intent == "code":
@@ -189,6 +254,7 @@ def process_command(user_input: str):
                 print(f"\n{C_YELLOW}⚠️ Error executing plugin {intent}: {e}{C_RESET}")
                 return
         
+        # --- EXTRACT SAVE PATH ---
         if target_file:
             save_path = target_file
         else:
@@ -197,10 +263,47 @@ def process_command(user_input: str):
             save_path = custom_name if custom_name else "untitled_generation.txt"
             print("-"*50)
         
-        success = extract_and_save_code(code_result, default_filename=save_path)
+        # --- SAVE AND SHOW SUMMARY ---
+        success, ai_summary = extract_and_save_code(code_result, default_filename=save_path)
         if success:
             auto_commit(save_path, message=f"CodeAOIS auto-update: {save_path} via {intent}")
+            print("\n")
+            md = Markdown(ai_summary)
+            console.print(Panel(md, title="[bold cyan]Agent Summary[/bold cyan]", border_style="cyan", expand=False))
+            print("\n")
             
+            # --- NEW: BRIDGE THE BRAINS ---
+            # Inject the coding action into the shared chat memory!
+            chat_history.append({"role": "user", "content": user_input})
+            chat_history.append({
+                "role": "assistant", 
+                "content": f"[System Log: I successfully generated code and saved it to '{save_path}'. Here is my summary of what I did: {ai_summary}]"
+            })
+            if len(chat_history) > 20: chat_history = chat_history[-20:]
+            save_history(chat_history)
+# --- NEW: THE MULTI-AGENT TESTER LOOP ---
+            if save_path.endswith('.py'):
+                confirm_test = input(f"{C_PURPLE}🧪 [Tester Agent] Shall I execute '{save_path}' to check for errors? [Y/n]: {C_RESET}").strip().lower()
+                
+                if confirm_test in ['y', '']:
+                    print(f"   {C_PURPLE}⚙️ Running tests...{C_RESET}")
+                    test_success, test_output = run_test(save_path)
+                    
+                    if test_success:
+                        print(f"{C_GREEN}✅ Test Passed! Terminal Output:\n{C_RESET}{test_output}\n")
+                    else:
+                        print(f"{C_YELLOW}❌ Test Failed! Crash Log:\n{C_RESET}{test_output}\n")
+                        
+                        # The Loop-Back!
+                        fix_confirm = input(f"{C_PURPLE}🔁 Pass crash log back to Coder Agent to fix? [Y/n]: {C_RESET}").strip().lower()
+                        if fix_confirm in ['y', '']:
+                            print(f"{C_GREEN}⚙️ Re-Engaging Coder agent for bug fix...{C_RESET}")
+                            
+                            # Automatically generate a new prompt with the error log
+                            fix_prompt = f"I ran {save_path} and got this error:\n{test_output}\nPlease fix the code."
+                            
+                            # Recursively call the command processor to handle the fix!
+                            process_command(fix_prompt)
     else:
         print(f"{C_YELLOW}❓ Unknown intent. Please try rephrasing.{C_RESET}")
 
@@ -228,7 +331,6 @@ def main():
     if profile:
         print(f"{C_CYAN}  Welcome back, {profile.get('name', 'Developer')}!{C_RESET}\n")
     
-    # --- INITIALIZE THE PROMPT TOOLKIT SESSION ---
     session = PromptSession(
         completer=command_completer,
         auto_suggest=AutoSuggestFromHistory(),
@@ -237,7 +339,6 @@ def main():
     
     while True:
         try:
-            # The new interactive prompt with bold green formatting!
             user_input = session.prompt(HTML('<b><ansigreen>CodeAOIS></ansigreen></b> ')).strip()
             if not user_input:
                 continue
