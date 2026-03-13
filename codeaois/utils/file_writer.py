@@ -1,11 +1,11 @@
 # codeaois/utils/file_writer.py
 import os
-
+import re
 C_YELLOW = '\033[93m'
 C_GREEN = '\033[92m'
 C_RESET = '\033[0m'
 
-def extract_and_save_code(response_text: str, default_filename: str) -> tuple[bool, str]:
+def extract_and_save_code(response_text: str, default_filename: str = "untitled_generation.txt") -> tuple[bool, str]:
     """Saves the code and returns the AI's explanation summary."""
     
     # Split the AI's response into Code and Summary

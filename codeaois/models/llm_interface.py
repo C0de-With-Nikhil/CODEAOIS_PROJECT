@@ -1,89 +1,70 @@
-# codeaois/models/llm_interface.py
-import os
 import requests
 import json
-from pathlib import Path
+from codeaois.core.memory import load_settings, log_token_usage
 
-def get_api_key() -> str:
-    key = os.getenv("OPENROUTER_API_KEY")
-    if key: return key
-    
-    base_dir = Path(__file__).resolve().parent.parent
-    possible_paths = [base_dir / ".env", base_dir.parent / ".env"]
-    
-    for env_path in possible_paths:
-        if env_path.exists():
-            with open(env_path, "r", encoding="utf-8") as f:
-                for line in f:
-                    if "OPENROUTER_API_KEY" in line.upper():
-                        parts = line.split("=", 1)
-                        if len(parts) > 1: return parts[1].strip().strip('\'"')
-    return ""
+PROXY_URL = "https://codeaois-proxy.vercel.app/api/chat"
 
-# --- ADDED HISTORY PARAMETER ---
 def call_openrouter(system_prompt: str, user_prompt: str, intent: str = "chat", history: list = None) -> str:
-    """Handles API calls with split fallback loops and conversation memory."""
-    api_key = get_api_key()
-    if not api_key:
-        return "[Error]: Failed to extract OPENROUTER_API_KEY."
+    """Handles API calls, dynamically routing between Cloud Proxy or Local Custom Key."""
+    
+    settings = load_settings()
+    use_custom = settings.get("use_custom_api_key", False)
+    custom_key = settings.get("custom_api_key", "")
 
-    if intent in ["code", "data_science"]:
-        models_to_try = [
-            "openai/gpt-oss-120b:free",
-            "stepfun/step-3.5-flash:free",
-            "qwen/qwen3-vl-30b-a3b-thinking:free",
-            "qwen/qwen3-vl-235b-a22b-thinking:free",
-            "meta-llama/llama-3.1-8b-instruct:free",
-            "mistralai/mistral-7b-instruct:free"
-        ]
-    else:
-        models_to_try = [
-            "liquid/lfm-2.5-1.2b-thinking:free",
-            "arcee-ai/trinity-large-preview:free",
-            "liquid/lfm-2.5-1.2b-instruct:free",
-            "arcee-ai/trinity-mini:free",
-            "meta-llama/llama-3.1-8b-instruct:free",
-            "qwen/qwen2.5-7b-instruct:free",
-            "mistralai/mistral-7b-instruct:free"
-        ]
+    # Clean, premium models list (Strictly free to prevent stealth charges)
+    models_to_try = [
+        "liquid/lfm-2.5-1.2b-thinking:free",
+        "arcee-ai/trinity-large-preview:free",
+        "meta-llama/llama-3.1-8b-instruct:free",
+        "mistralai/mistral-7b-instruct:free",
+        "google/gemma-3-27b-it:free"
+    ]
 
-    headers = {
-        "Authorization": f"Bearer {api_key}",
-        "HTTP-Referer": "https://github.com/codeaois/codeaois",
-        "X-Title": "CodeAOIS Developer OS",
-        "Content-Type": "application/json"
-    }
-
-    # --- BUILD THE MEMORY PAYLOAD ---
     messages = [{"role": "system", "content": system_prompt}]
     if history:
         messages.extend(history)
     messages.append({"role": "user", "content": user_prompt})
 
     for model in models_to_try:
-        print(f"📡 [LLM Interface] Routing request to {model}...")
-        payload = {
-            "model": model,
-            "messages": messages
-        }
+        payload = {"model": model, "messages": messages}
 
         try:
-            response = requests.post(
-                url="https://openrouter.ai/api/v1/chat/completions",
-                headers=headers,
-                data=json.dumps(payload),
-                timeout=45
-            )
+            if use_custom and custom_key:
+                # BYPASS PROXY: Direct connection to OpenRouter (Fixes 60s timeout!)
+                headers = {
+                    "Authorization": f"Bearer {custom_key}",
+                    "HTTP-Referer": "https://codeaois.com",
+                    "X-Title": "CodeAOIS Local",
+                    "Content-Type": "application/json"
+                }
+                response = requests.post(
+                    url="https://openrouter.ai/api/v1/chat/completions",
+                    headers=headers,
+                    json=payload,
+                    timeout=300 # 5 Minute timeout for massive code files!
+                )
+            else:
+                # SECURE PROXY: Route through Vercel
+                response = requests.post(
+                    url=PROXY_URL,
+                    json=payload,
+                    timeout=55
+                )
             
-            if response.status_code == 429:
-                print(f"   -> ⚠️ Server overloaded (429). Instantly falling back to next free model...")
-                continue
+            # Skip model if overloaded or out of credits
+            if response.status_code in [503, 402, 429]:
+                continue 
                 
             response.raise_for_status()
-            return response.json()["choices"][0]["message"]["content"]
+            data = response.json()
+            
+            # NEW: Track tokens used!
+            usage = data.get("usage", {})
+            log_token_usage(usage.get("prompt_tokens", 0), usage.get("completion_tokens", 0))
+            
+            return data["choices"][0]["message"]["content"]
             
         except requests.exceptions.RequestException:
-            print(f"   -> ⚠️ Network error on {model}. Trying fallback...")
-            continue
+            continue 
 
-    return "[API Error]: All free models in this category are overloaded. Please try again in 60 seconds."
+    return "Error: The AI network is currently overloaded. Please try again or add a Custom API Key using /setting."
