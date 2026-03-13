@@ -9,13 +9,10 @@ codeaois.egg-info/dependency_links.txt
 codeaois.egg-info/entry_points.txt
 codeaois.egg-info/requires.txt
 codeaois.egg-info/top_level.txt
-codeaois/agents/3d_agent.py
 codeaois/agents/coder_agent.py
 codeaois/agents/data_science_agent.py
-codeaois/agents/database_agent.py
-codeaois/agents/debugging_agent.py
-codeaois/agents/devops_agent.py
 codeaois/agents/git_agent.py
+codeaois/agents/pip_agent.py
 codeaois/agents/tester_agent.py
 codeaois/brain/__init__.py
 codeaois/brain/embeddings.py
