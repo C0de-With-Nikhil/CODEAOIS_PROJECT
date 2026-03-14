@@ -509,7 +509,7 @@ def process_command(user_input: str):
             
         full_context = f"\n--- Project Structure ---\n{project_tree}\n" + (file_context if file_context else "") + deep_context
             
-        if intent in ["terminal_agent", "git_agent"]:
+        if intent in ["pip_agent", "terminal_agent", "git_agent"]:
             try:
                 module = importlib.import_module(f"codeaois.agents.{intent}")
                 agent_func = getattr(module, f"generate_{intent.replace('_agent', '')}_code")
