@@ -6,7 +6,7 @@ long_description = (this_directory / "README.md").read_text(encoding="utf-8")
 
 setup(
     name="codeaois", 
-    version="0.2.2",
+    version="0.3.0",
     author="Nikhil Nagar", 
     description="An advanced, multi-agent AI Developer OS with zero-setup cloud architecture.",
     long_description=long_description,

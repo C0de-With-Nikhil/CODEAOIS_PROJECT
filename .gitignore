@@ -21,3 +21,13 @@ dist/
 
 # OS files
 .DS_Store
+
+.codeaois/
+.codeaois_db/
+history.json
+profile.json
+session.json
+settings.json
+.env
+__pycache__/
+*.pyc
