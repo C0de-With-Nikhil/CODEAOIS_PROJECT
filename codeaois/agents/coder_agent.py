@@ -1,6 +1,7 @@
 # codeaois/agents/coder_agent.py
 from codeaois.models.llm_interface import call_openrouter
 
+
 def generate_code(user_prompt: str, file_context: str = "") -> str:
     if file_context:
         system_prompt = (
@@ -16,10 +17,18 @@ def generate_code(user_prompt: str, file_context: str = "") -> str:
             "2. AFTER the code, you MUST add the exact text '---SUMMARY---' on a new line.\n"
             "3. AFTER the summary delimiter, write a brief, friendly explanation of how the code works."
         )
-    
+
     full_prompt = user_prompt
     if file_context:
         full_prompt += f"\n\nHere are the existing files for context:\n{file_context}"
-        
+
     response = call_openrouter(system_prompt, full_prompt, intent="code")
     return response.strip()
+
+
+class CoderAgent:
+    def execute(self, task: str) -> str:
+        """Execute a code generation task."""
+        if not task:
+            return "```text\nNo task provided to the coder agent.\n```"
+        return generate_code(str(task))

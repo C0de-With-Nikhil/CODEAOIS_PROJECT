@@ -1,6 +1,6 @@
-from agents.coder_agent import CoderAgent
-from agents.tester_agent import TesterAgent
-from agents.git_agent import GitAgent
+from codeaois.agents.coder_agent import CoderAgent
+from codeaois.agents.tester_agent import TesterAgent
+from codeaois.agents.git_agent import GitAgent
 
 class AgentOrchestrator:
     def __init__(self):
