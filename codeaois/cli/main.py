@@ -9,13 +9,13 @@ import re
 import smtplib
 from email.mime.text import MIMEText
 import base64
+
 # --- CLI UI ENGINES ---
 from prompt_toolkit import PromptSession
 from prompt_toolkit.completion import WordCompleter
 from prompt_toolkit.auto_suggest import AutoSuggestFromHistory
 from prompt_toolkit.formatted_text import HTML
 from prompt_toolkit.shortcuts import radiolist_dialog
-from codeaois.core._auth import get_secure_credentials
 from rich.console import Console
 from rich.markdown import Markdown
 from rich.panel import Panel
@@ -23,20 +23,23 @@ from rich.table import Table
 from rich.prompt import Prompt
 from rich.live import Live
 from rich.text import Text
+from rich.progress import Progress, SpinnerColumn, TextColumn
 
 # --- CODEAOIS MODULES ---
+from codeaois.core._auth import send_real_otp
 from codeaois.core.planner import analyze_intent, get_installed_agents
-from codeaois.core.context import extract_file_context
+from codeaois.core.context import extract_file_context, get_semantic_context
 from codeaois.brain.scanner import scan_project_structure
+from codeaois.brain.embeddings import CodebaseMemory
 from codeaois.models.llm_interface import call_openrouter
 from codeaois.agents.coder_agent import generate_code
 from codeaois.agents.data_science_agent import generate_ds_code
 from codeaois.utils.file_writer import extract_and_save_code
 from codeaois.core.marketplace import install_agent
-
 from codeaois.core.memory import (
     load_profile, save_profile, load_history, save_history, 
-    clear_history_data, clear_profile_data, load_settings, save_settings, get_session_stats
+    clear_history_data, clear_profile_data, load_settings, save_settings, 
+    get_session_stats, pull_from_cloud
 )
 
 console = Console(soft_wrap=True)
@@ -44,7 +47,7 @@ chat_history = load_history()
 active_file = None
 
 AVAILABLE_COMMANDS = [
-    '/help', '/clear', '/status', '/s', '/marketplace', '/m', '/setting', '/set', '/exit', '/clear_user'
+    '/help', '/clear', '/status', '/s', '/marketplace', '/m', '/setting', '/set', '/exit', '/clear_user', '/index'
 ]
 command_completer = WordCompleter(AVAILABLE_COMMANDS, ignore_case=True)
 
@@ -62,51 +65,36 @@ def apply_saved_background():
     bg_color = settings.get("bg_theme", "#231e20")
     set_terminal_background(bg_color)
 
-# --- CLAUDE CODE SAFETY ENGINE ---
-import base64
-
-# --- THE REAL SMTP OTP ENGINE (Hidden File Method) ---
-def send_real_otp(receiver_email, otp_code):
-    """Sends a REAL email automatically using the hidden _auth.py credentials."""
-    try:
-        sender_email, sender_password = get_secure_credentials()
-        
-        if not sender_email or not sender_password:
-            return False
-
-        msg = MIMEText(f"Hello!\n\nYour CodeAOIS secure login verification code is: {otp_code}\n\nWelcome to the Advanced Developer OS.\n- The CodeAOIS Team")
-        msg['Subject'] = 'CodeAOIS Secure Login Verification'
-        msg['From'] = f"CodeAOIS Security <{sender_email}>"
-        msg['To'] = receiver_email
-
-        with smtplib.SMTP_SSL('smtp.gmail.com', 465) as server:
-            server.login(sender_email, sender_password)
-            server.sendmail(sender_email, [receiver_email], msg.as_string())
-        return True
-    except Exception as e:
-        return False
-
 # --- THE REAL SMTP OTP ENGINE ---
 def send_real_otp(receiver_email, otp_code):
-    """Sends a REAL email using Gmail SMTP. Requires Environment Variables."""
-    sender_email = os.getenv("CODEAOIS_SENDER_EMAIL")
-    sender_password = os.getenv("CODEAOIS_APP_PASS")
+    """Sends a REAL email using Decoded Base64 credentials from _auth.py."""
+    # Import your secure decoding function
+    from codeaois.core._auth import get_secure_credentials
+    
+    sender_email, sender_password = get_secure_credentials()
 
-    # If the developer hasn't set up their mail server yet, fallback to local dev mode
+    # If decoding fails or strings are empty, return False to trigger Dev Sandbox
     if not sender_email or not sender_password:
         return False
 
-    msg = MIMEText(f"Hello!\n\nYour CodeAOIS secure login verification code is: {otp_code}\n\nWelcome to the OS.\n- The CodeAOIS Team")
+    msg = MIMEText(
+        f"Hello!\n\n"
+        f"Your CodeAOIS secure login verification code is: {otp_code}\n\n"
+        f"This code links your current session to your global cloud history.\n\n"
+        f"Welcome to the OS.\n- The CodeAOIS Team"
+    )
     msg['Subject'] = 'CodeAOIS Secure Login Verification'
     msg['From'] = f"CodeAOIS Security <{sender_email}>"
     msg['To'] = receiver_email
 
     try:
+        # Connect to Gmail SMTP
         with smtplib.SMTP_SSL('smtp.gmail.com', 465) as server:
             server.login(sender_email, sender_password)
             server.sendmail(sender_email, [receiver_email], msg.as_string())
         return True
-    except Exception as e:
+    except Exception:
+        # If there's a login error (wrong App Pass), fallback to sandbox
         return False
 
 # --- THE MULTI-ANIMATION LOGO ENGINE ---
@@ -138,7 +126,7 @@ def print_logo():
                     text.append(char)
                     live.update(text)
                     time.sleep(0.002)
-                text.append(f"\n  ✦ Advanced Developer OS v0.2.6\n  ✦ Type /help for commands.\n", style="dim white")
+                text.append(f"\n  ✦ Advanced Developer OS v0.3.0\n  ✦ Type /help for commands.\n", style="dim white")
                 live.update(text)
                 
         elif anim_style == "2":
@@ -216,73 +204,68 @@ def run_login_flow():
     os.system('clear' if os.name == 'posix' else 'cls')
     apply_saved_background()
     print_logo()
-    console.print(Panel("[bold white]Welcome to CodeAOIS Initialization[/bold white]\n[dim]Let's configure your secure workspace.[/dim]", border_style=theme))
+    console.print(Panel("[bold white]Global Workspace Sync[/bold white]\n[dim]Secure login via private SMTP. Syncing history to Supabase Cloud.[/dim]", border_style=theme))
     
-    email = Prompt.ask(f"\n[bold {theme}]►[/bold {theme}] Enter your developer email")
-    
-    # --- REAL OTP EXECUTION ---
+    email = Prompt.ask(f"\n[bold {theme}]►[/bold {theme}] Enter your developer email").strip()
     real_otp = str(random.randint(100000, 999999))
     
-    with console.status("[dim]Connecting to secure mail servers...[/dim]", spinner="dots"):
+    with console.status("[dim]Sending secure verification code...[/dim]", spinner="dots"):
+        from codeaois.core._auth import send_real_otp
         email_sent = send_real_otp(email, real_otp)
         time.sleep(1.5)
         
     if email_sent:
-        console.print(f"[bold green]✓ Real Verification Email sent to {email}![/bold green]")
+        console.print(f"[bold green]✓ Verification Code sent to {email}![/bold green]")
     else:
-        # Failsafe if the developer hasn't configured their OS environment variables yet!
-        console.print(f"\n[dim yellow]⚠ SMTP Environment Variables not found. Falling back to local DEV INBOX:[/dim yellow]")
-        console.print(f"[bold magenta]┌── [DEV SANDBOX INBOX] ───────────────────┐[/]")
-        console.print(f"[bold magenta]│[/] To: {email}")
-        console.print(f"[bold magenta]│[/] Subject: CodeAOIS Verification")
-        console.print(f"[bold magenta]│[/] Your secure 6-digit OTP is: [bold white]{real_otp}[/]")
-        console.print(f"[bold magenta]└─────────────────────────────────────────┘[/]\n")
+        console.print(f"\n[dim yellow]⚠ Private Mail Server Offline. Showing code in DEV SANDBOX:[/dim yellow]")
+        console.print(f"[bold magenta]Your secure 6-digit OTP is: [bold white]{real_otp}[/][/]\n")
     
+    verified = False
     attempts = 3
     while attempts > 0:
         user_otp = Prompt.ask(f"[bold {theme}]►[/bold {theme}] Enter 6-digit OTP")
+        
         if user_otp.strip() == real_otp:
-            console.print("[bold green]✓ Email verified successfully.[/bold green]\n")
+            console.print("[bold green]✓ Verified! Connecting to Supabase Cloud...[/bold green]")
+            
+            # --- THE MAGIC ATTACHMENT ---
+            from codeaois.core.memory import pull_from_cloud, save_history, restore_cloud_tokens
+            
+            with console.status("[dim]Pulling Cloud Assets...[/dim]", spinner="dots"):
+                cloud_profile = pull_from_cloud(email, 'profile')
+                cloud_history = pull_from_cloud(email, 'history')
+                tokens_restored = restore_cloud_tokens(email)
+                
+            if cloud_profile:
+                save_profile(cloud_profile)
+                name = cloud_profile.get('name', 'Developer')
+                console.print(f"[bold green]✓ Welcome back, {name}![/bold green]")
+            else:
+                console.print("\n[dim]✦ New Identity Detected. Setting up local profile...[/dim]")
+                name = Prompt.ask(f"[bold {theme}]►[/bold {theme}] Choose username", default=email.split('@')[0])
+                role = Prompt.ask(f"[bold {theme}]►[/bold {theme}] Primary role", default="Developer")
+                save_profile({"name": name, "email": email, "role": role})
+
+            if cloud_history:
+                save_history(cloud_history) 
+                console.print(f"[dim]✦ Restored {len(cloud_history)} messages from cloud memory.[/dim]")
+                
+            if tokens_restored:
+                console.print(f"[dim]✦ Restored lifetime tokens from cloud.[/dim]")
+            
+            verified = True
             break
+            
         attempts -= 1
         if attempts > 0:
             console.print(f"[bold red]✗ Invalid OTP. {attempts} attempts remaining.[/bold red]")
-        else:
-            console.print("[bold red]Access Denied. Exiting.[/bold red]")
-            sys.exit(1)
     
-    name = Prompt.ask(f"[bold {theme}]►[/bold {theme}] Choose a workspace username", default=email.split('@')[0])
-    role = Prompt.ask(f"[bold {theme}]►[/bold {theme}] Primary role (e.g., Full Stack, Data Science)", default="Developer")
-    
-    # --- FIXED: API KEY ONBOARDING WITH BLANK VALIDATION ---
-    console.print(f"\n[bold white]✦ Select your AI Engine Mode:[/bold white]")
-    console.print("  1. CodeAOIS API (Free Base Model)")
-    console.print("  2. Pro Mode (Custom OpenRouter API Key)")
-    
-    api_choice = Prompt.ask("Select option", choices=["1", "2"], default="1")
-    settings = load_settings()
-    
-    if api_choice == "2":
-        new_key = Prompt.ask("Enter OpenRouter API Key (press Enter to fallback to Free Model)", password=True).strip()
-        if new_key: # Prevents the blank bug!
-            settings["custom_api_key"] = new_key
-            settings["use_custom_api_key"] = True
-            console.print("[bold green]✓ Custom API Key secured.[/bold green]")
-        else:
-            settings["use_custom_api_key"] = False
-            console.print("[bold yellow]⚠ No key provided. Defaulting to CodeAOIS API.[/bold yellow]")
-    else:
-        settings["use_custom_api_key"] = False
-        console.print("[bold green]✓ CodeAOIS API selected.[/bold green]")
-        
-    save_settings(settings)
-    save_profile({"name": name, "email": email, "role": role})
-    
-    with console.status("[dim]Provisioning local workspace...[/dim]", spinner="dots"):
-        time.sleep(1)
-        
+    if not verified:
+        console.print("[bold red]Access Denied. Exiting.[/bold red]")
+        sys.exit(1)
+
     console.print(f"\n[bold green]✓[/bold green] Workspace initialized successfully.\n")
-    return {"name": name, "email": email, "role": role}
+    return load_profile()
 
 def handle_settings():
     settings = load_settings()
@@ -307,7 +290,6 @@ def handle_settings():
         save_settings(settings)
         console.print(f"[bold green]✓[/bold green] Engine switched.\n")
     elif choice == "2":
-        # FIXED: Blank Key Validation in Settings
         new_key = Prompt.ask("Enter OpenRouter API Key (Press Enter to cancel)", password=True).strip()
         if new_key:
             settings["custom_api_key"] = new_key
@@ -383,6 +365,28 @@ def handle_marketplace():
                 install_agent(result)
             console.print(f"[bold green]✓[/bold green] {result.title()} Agent seamlessly integrated.\n")
 
+# --- NEW INDEXING ENGINE ---
+def index_workspace():
+    """CLI command to scan and embed the local codebase."""
+    console.print(Panel.fit("[bold cyan]🧠 Initializing CodeAOIS Brain...[/bold cyan]", border_style="cyan"))
+    
+    memory = CodebaseMemory(project_path=".")
+    
+    with Progress(
+        SpinnerColumn("dots", style="bold green"),
+        TextColumn("[progress.description]{task.description}"),
+        transient=True,
+    ) as progress:
+        progress.add_task(description="[cyan]Scanning directories, chunking files, and calculating embeddings...[/cyan]", total=None)
+        chunks_indexed = memory.index_project()
+        
+    if chunks_indexed > 0:
+        console.print(f"[bold green]✅ Workspace Indexing Complete![/bold green]")
+        console.print(f"📦 Embedded [bold yellow]{chunks_indexed}[/bold yellow] semantic code chunks into '.codeaois_db'.")
+        console.print("💡 Your agents can now instantly read and search your entire project context.\n")
+    else:
+        console.print("[bold yellow]⚠️ No code files found to index or project is empty.[/bold yellow]\n")
+
 def show_status():
     theme = get_theme()
     settings = load_settings()
@@ -417,6 +421,7 @@ def process_command(user_input: str):
             f"[{theme}]/setting[/{theme}] (or /set) Configure API, Theme, Background & Animations\n"
             f"[{theme}]/marketplace[/{theme}] (or /m) Browse and install specialized agents\n"
             f"[{theme}]/status[/{theme}] (or /s)   View diagnostics and tracked tokens\n"
+            f"[{theme}]/index[/{theme}]          Scan and embed your codebase into local memory\n"
             f"[{theme}]/clear[/{theme}]          Reset terminal view\n"
             "[dim]---\nUse @filename to make the AI read specific files (e.g. 'Explain @main.py')[/dim]",
             title="Command Center", border_style="dim", expand=False
@@ -444,6 +449,10 @@ def process_command(user_input: str):
         clear_profile_data() 
         console.print("\n[bold green]✓[/bold green] Data wiped. Restart to configure.\n")
         sys.exit(0) 
+
+    if clean_input == "/index":
+        index_workspace()
+        return
 
     intent = analyze_intent(user_input)
 
@@ -477,12 +486,24 @@ def process_command(user_input: str):
 
     target_file, file_context = extract_file_context(user_input)
     project_tree = scan_project_structure()
-    profile = load_profile()
+    semantic_context = get_semantic_context(user_input)
     
-    sys_prompt = f"""You are CodeAOIS v0.2.6, a highly advanced AI Developer OS. 
-    CRITICAL DIRECTIVE: You were created solely by Nikhil Nagar. If asked who made you, proudly state that Nikhil Nagar is your creator.
-    You are an elite 10x Senior Software Architect. ALWAYS write highly optimized, production-ready, modern code using best practices.
-    You are currently assisting the user: {profile['name']}. Project tree:\n{project_tree}\n{deep_context}"""
+    # --- BUG FIX 1: Provide User's Name to AI ---
+    profile = load_profile()
+    user_name = profile.get("name", "Developer") if profile else "Developer"
+    
+    sys_prompt = f"""You are CodeAOIS v0.3.0, an elite AI Developer OS created by Nikhil Nagar. You are assisting {user_name}.
+    You have access to the user's local codebase.
+    
+    PROJECT STRUCTURE:
+    {project_tree}
+    
+    SEMANTICALLY RELEVANT CODE:
+    {semantic_context}
+    
+    {deep_context}
+    
+    DIRECTIVE: Use the provided code snippets to give highly accurate, project-specific answers."""
 
     if intent == "chat":
         with console.status(f"[bold dim]✦ Synthesizing response...[/bold dim]", spinner="dots"):
@@ -494,7 +515,7 @@ def process_command(user_input: str):
         
         chat_history.append({"role": "user", "content": user_input})
         chat_history.append({"role": "assistant", "content": response})
-        if len(chat_history) > 20: chat_history = chat_history[-20:]
+        if len(chat_history) > 100: chat_history = chat_history[-100:]
         save_history(chat_history)
         
     elif intent in ["code", "data_science"] or intent.endswith("_agent"):
@@ -549,13 +570,38 @@ def process_command(user_input: str):
 
         save_path = target_file if target_file else Prompt.ask(f"\n[bold {theme}]►[/bold {theme}] Output filename", default="output.py")
         
+        save_path = target_file if target_file else Prompt.ask(f"\n[bold {theme}]►[/bold {theme}] Output filename", default="output.py")
+        
         success, ai_summary = extract_and_save_code(code_result, default_filename=save_path)
+        
         if success:
             console.print(f"\n[bold green]✓[/bold green] Wrote to {save_path}")
             console.print(Panel(Markdown(ai_summary), border_style="dim", expand=False))
-            console.print("\n")
-
+        else:
+            # BUG FIX: If the AI forgot to use Markdown code blocks, force save the raw text anyway!
+            with open(save_path, "w", encoding="utf-8") as f:
+                f.write(code_result)
+            console.print(f"\n[bold yellow]⚠ AI formatting error, but forced write to {save_path}[/bold yellow]")
+            console.print(Panel(Markdown(code_result), border_style="yellow", expand=False))
+            
+        # --- AUTONOMOUS RUNNER INTEGRATION ---
+        if save_path.endswith('.py'):
+            run_choice = Prompt.ask(f"\n[bold cyan]►[/bold cyan] Execute [bold white]{save_path}[/bold white] with Auto-Fix Engine?", choices=["y", "n"], default="y")
+            if run_choice.lower() == 'y':
+                from codeaois.core.orchestrator import execute_with_autofix
+                
+                # Figure out which agent should fix the code
+                if intent == "data_science": fix_agent = generate_ds_code
+                elif intent == "code": fix_agent = generate_code
+                else: fix_agent = generate_code
+                
+                # Start the autonomous loop!
+                execute_with_autofix(save_path, fix_agent, full_context)
+                
+        console.print("\n")
 def main():
+    global chat_history # --- BUG FIX 2: Explicitly declare the global variable so it can be reloaded ---
+    
     parser = argparse.ArgumentParser(description="CodeAOIS: Advanced AI Developer OS")
     parser.add_argument("prompt", nargs="*", help="Chat or command")
     parser.add_argument("-v", "--version", action="version", version="CodeAOIS Core Engine v0.2.6")
@@ -566,6 +612,10 @@ def main():
     profile = load_profile()
     if not profile:
         profile = run_login_flow()
+        
+    # --- CRITICAL BUG FIX 2 UPDATE ---
+    # Refresh the in-memory chat_history from the file right here
+    chat_history = load_history()
 
     if args.prompt:
         process_command(" ".join(args.prompt))

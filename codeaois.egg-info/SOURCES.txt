@@ -13,6 +13,7 @@ codeaois/agents/coder_agent.py
 codeaois/agents/data_science_agent.py
 codeaois/agents/git_agent.py
 codeaois/agents/pip_agent.py
+codeaois/agents/terminal_agent.py
 codeaois/agents/tester_agent.py
 codeaois/brain/__init__.py
 codeaois/brain/embeddings.py
@@ -21,6 +22,7 @@ codeaois/brain/scanner.py
 codeaois/cli/__init__.py
 codeaois/cli/main.py
 codeaois/config/settings.py
+codeaois/core/_auth.py
 codeaois/core/context.py
 codeaois/core/marketplace.py
 codeaois/core/memory.py

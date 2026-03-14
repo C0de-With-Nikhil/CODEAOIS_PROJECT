@@ -1,49 +1,70 @@
 # codeaois/brain/scanner.py
 import os
+import pathspec
 
-def scan_project_structure(root_dir: str = ".", ignore_dirs: list = None, max_depth: int = 3, max_files: int = 200) -> str:
-    """
-    Goal #9: Project Brain (with safety limits).
-    Scans the folder structure but strictly limits depth and file count 
-    to prevent network timeouts when run in massive directories like '~'.
-    """
-    if ignore_dirs is None:
-        # Added OS-level hidden folders to ignore list
-        ignore_dirs = ['.git', '__pycache__', 'venv', 'env', 'node_modules', '.venv', 'codeaois.egg-info', '.cache', '.config', '.local']
-
-    tree_str = f"📁 Project Root: {os.path.abspath(root_dir)}\n"
-    file_count = 0
+def scan_project_structure(root_dir=".", max_depth=3):
+    """Generates a simple string tree of the project for the LLM context prompt."""
+    tree = []
+    # Ignore these heavy/hidden directories in the prompt tree
+    ignore_dirs = {".git", "venv", "env", "__pycache__", "node_modules", ".codeaois_db", "codeaois.egg-info", "dist"}
     
-    # Calculate starting depth
-    start_level = root_dir.rstrip(os.sep).count(os.sep)
-
-    for dirpath, dirnames, filenames in os.walk(root_dir):
-        # Calculate current depth relative to start
-        current_level = dirpath.rstrip(os.sep).count(os.sep)
-        level = current_level - start_level
+    for root, dirs, files in os.walk(root_dir):
+        # Modify dirs in-place to skip ignored directories
+        dirs[:] = [d for d in dirs if d not in ignore_dirs]
+        level = root.replace(root_dir, '').count(os.sep)
         
-        # Stop digging if we hit our depth limit
         if level > max_depth:
-            dirnames[:] = [] # Clear the list to stop os.walk from going deeper
             continue
-
-        dirnames[:] = [d for d in dirnames if d not in ignore_dirs and not d.startswith('.')]
-        
-        indent = ' ' * 4 * level
-        folder_name = os.path.basename(dirpath)
-        
-        if level > 0:
-            tree_str += f"{indent}📂 {folder_name}/\n"
             
-        sub_indent = ' ' * 4 * (level + 1)
-        for f in filenames:
-            # Emergency Stop: Prevent massive payloads from timing out the API
-            if file_count >= max_files:
-                tree_str += f"{sub_indent}... [Max file limit reached to protect API connection]\n"
-                return tree_str 
+        indent = ' ' * 4 * level
+        folder_name = os.path.basename(root) if root != "." else os.path.basename(os.path.abspath(root_dir))
+        tree.append(f"{indent}📂 {folder_name}/")
+        
+        subindent = ' ' * 4 * (level + 1)
+        for f in files:
+            if not f.endswith((".pyc", ".png", ".jpg", ".whl", ".tar.gz", ".vsix")):
+                tree.append(f"{subindent}📄 {f}")
                 
-            if f != '.env' and not f.startswith('.'):
-                tree_str += f"{sub_indent}📄 {f}\n"
-                file_count += 1
+    return "\n".join(tree)
+
+class CodeScanner:
+    def __init__(self, root_dir="."):
+        self.root_dir = root_dir
+        # Standard directories and files to ignore globally for RAG Embeddings
+        self.default_ignores = [
+            ".git", "venv", "env", "__pycache__", "node_modules", 
+            ".pytest_cache", "dist", "build", "*.egg-info", 
+            "*.pyc", "*.png", "*.jpg", "*.pdf", ".codeaois_db"
+        ]
+        self.ignore_spec = self._load_gitignore()
+
+    def _load_gitignore(self):
+        """Loads .gitignore if it exists and combines it with defaults."""
+        ignore_patterns = list(self.default_ignores)
+        gitignore_path = os.path.join(self.root_dir, ".gitignore")
+        
+        if os.path.exists(gitignore_path):
+            with open(gitignore_path, "r") as f:
+                ignore_patterns.extend(f.read().splitlines())
                 
-    return tree_str
+        return pathspec.PathSpec.from_lines('gitwildmatch', ignore_patterns)
+
+    def scan_project(self):
+        """Yields (filepath, content) for all valid code files."""
+        for dirpath, dirnames, filenames in os.walk(self.root_dir):
+            # Filter out ignored directories in-place
+            dirnames[:] = [d for d in dirnames if not self.ignore_spec.match_file(os.path.join(dirpath, d))]
+            
+            for filename in filenames:
+                filepath = os.path.join(dirpath, filename)
+                rel_path = os.path.relpath(filepath, self.root_dir)
+                
+                if self.ignore_spec.match_file(rel_path):
+                    continue
+                    
+                try:
+                    with open(filepath, "r", encoding="utf-8") as f:
+                        yield rel_path, f.read()
+                except UnicodeDecodeError:
+                    # Skip binary files that slipped through
+                    pass

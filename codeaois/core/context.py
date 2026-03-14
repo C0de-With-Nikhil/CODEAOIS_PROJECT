@@ -1,5 +1,17 @@
 # codeaois/core/context.py
 import os
+from codeaois.brain.embeddings import CodebaseMemory
+
+def get_semantic_context(user_input):
+    """Intercepts the user prompt and sneaks relevant RAG data into the AI's brain."""
+    memory = CodebaseMemory(project_path=".")
+    
+    # Search the database for the top 3 most relevant code chunks
+    context = memory.search(user_input, top_k=3)
+    
+    if context:
+        return f"\n[RAG SYSTEM: Relevant codebase context found automatically]\n{context}\n"
+    return ""
 
 def extract_file_context(user_prompt: str) -> tuple[str, str]:
     """Finds all files in the prompt, targets the first, and reads all of them for context."""
@@ -36,4 +48,4 @@ def extract_file_context(user_prompt: str) -> tuple[str, str]:
         else:
             combined_context += f"\n--- {file_name} (File does not exist yet) ---\n"
             
-    return target_file, combined_context
+        return target_file, combined_context
