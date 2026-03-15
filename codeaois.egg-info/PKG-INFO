@@ -1,6 +1,6 @@
 Metadata-Version: 2.4
 Name: codeaois
-Version: 0.2.6
+Version: 0.3.1
 Summary: Advanced AI Developer OS
 Author: Nikhil Nagar
 Requires-Python: >=3.8
@@ -13,6 +13,21 @@ Dynamic: author
 Dynamic: requires-python
 
 # CodeAOIS
+
+# 💻 CodeAOIS (v0.3.0) - Advanced Developer OS
+An elite, autonomous AI operating system for your terminal. CodeAOIS doesn't just chat; it reads your codebase, runs its own code, and fixes its own bugs.
+
+## 🔥 Core Pillars
+1. **Global Cloud Identity:** Secure, OTP-based login via private SMTP. Your history, developer profile, and token usage follow you to any machine via Supabase.
+2. **Autonomous Execution Loop:** The OS executes generated Python scripts locally. If it hits a `Traceback` error, it autonomously feeds the crash data back to the LLM and self-corrects the code.
+3. **Local Codebase Brain (RAG):** Type `/index` to calculate embeddings for your entire local project. CodeAOIS instantly retrieves semantic context so you never have to copy-paste your code again.
+4. **LLM Supervisor Engine:** An intelligent routing system that determines if you want to chat, execute a terminal command, or write a new script, routing tasks to specialized agents seamlessly.
+
+## ⚡ Quick Start
+```bash
+pip install -r requirements.txt
+codeaois
+```
 
 ### Advanced AI Developer Operating System
 

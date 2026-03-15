@@ -13,8 +13,11 @@ codeaois/agents/coder_agent.py
 codeaois/agents/data_science_agent.py
 codeaois/agents/git_agent.py
 codeaois/agents/pip_agent.py
+codeaois/agents/researcher_agent.py
+codeaois/agents/scaffolder_agent.py
 codeaois/agents/terminal_agent.py
 codeaois/agents/tester_agent.py
+codeaois/agents/vision_agent.py
 codeaois/brain/__init__.py
 codeaois/brain/embeddings.py
 codeaois/brain/memory.py

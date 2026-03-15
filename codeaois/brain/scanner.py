@@ -2,31 +2,36 @@
 import os
 import pathspec
 
-def scan_project_structure(root_dir=".", max_depth=3):
-    """Generates a simple string tree of the project for the LLM context prompt."""
-    tree = []
-    # Ignore these heavy/hidden directories in the prompt tree
-    ignore_dirs = {".git", "venv", "env", "__pycache__", "node_modules", ".codeaois_db", "codeaois.egg-info", "dist"}
+import os
+
+# --- THE CONTEXT SHIELD ---
+IGNORE_DIRS = {".git", "node_modules", "venv", "env", "__pycache__", ".codeaois_db", "build", "dist", ".idea", ".vscode"}
+IGNORE_FILES = {".env", ".DS_Store", "package-lock.json", "yarn.lock"}
+IGNORE_EXTS = {".pyc", ".png", ".jpg", ".jpeg", ".exe", ".dll", ".so", ".zip", ".tar.gz", ".pdf", ".mp4"}
+
+def scan_project_structure(root_dir="."):
+    """Scans the directory tree, but shields the AI from massive junk folders and binary files."""
+    tree_str = ""
     
     for root, dirs, files in os.walk(root_dir):
-        # Modify dirs in-place to skip ignored directories
-        dirs[:] = [d for d in dirs if d not in ignore_dirs]
-        level = root.replace(root_dir, '').count(os.sep)
+        # IN-PLACE FILTERING: This physically stops the OS from even looking inside node_modules or .git!
+        dirs[:] = [d for d in dirs if d not in IGNORE_DIRS and not d.startswith('.')]
         
-        if level > max_depth:
-            continue
-            
-        indent = ' ' * 4 * level
-        folder_name = os.path.basename(root) if root != "." else os.path.basename(os.path.abspath(root_dir))
-        tree.append(f"{indent}📂 {folder_name}/")
+        level = root.replace(root_dir, '').count(os.sep)
+        indent = ' ' * 4 * (level)
+        folder_name = os.path.basename(root)
+        
+        if folder_name:
+            tree_str += f"{indent}📂 {folder_name}/\n"
         
         subindent = ' ' * 4 * (level + 1)
         for f in files:
-            if not f.endswith((".pyc", ".png", ".jpg", ".whl", ".tar.gz", ".vsix")):
-                tree.append(f"{subindent}📄 {f}")
-                
-    return "\n".join(tree)
-
+            # Block secret files and heavy images/binaries
+            if f in IGNORE_FILES or any(f.endswith(ext) for ext in IGNORE_EXTS):
+                continue
+            tree_str += f"{subindent}📄 {f}\n"
+            
+    return tree_str if tree_str else "📂 (Empty Project)"
 class CodeScanner:
     def __init__(self, root_dir="."):
         self.root_dir = root_dir
