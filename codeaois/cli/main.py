@@ -114,7 +114,7 @@ def print_logo():
 
     if anim_style == "0":
         console.print(f"[bold {theme}]{logo_str}[/]")
-        console.print(f"  [dim]✦[/dim] [bold white]Advanced Developer OS[/bold white] [dim]v0.2.6[/dim]")
+        console.print(f"  [dim]✦[/dim] [bold white]Advanced Developer OS[/bold white] [dim]v0.3.1[/dim]")
         console.print(f"  [dim]✦[/dim] [dim]Type /help for commands.[/dim]\n")
         return
 
@@ -126,7 +126,7 @@ def print_logo():
                     text.append(char)
                     live.update(text)
                     time.sleep(0.002)
-                text.append(f"\n  ✦ Advanced Developer OS v0.3.0\n  ✦ Type /help for commands.\n", style="dim white")
+                text.append(f"\n  ✦ Advanced Developer OS v0.3.1\n  ✦ Type /help for commands.\n", style="dim white")
                 live.update(text)
                 
         elif anim_style == "2":
@@ -281,21 +281,34 @@ def handle_settings():
     table.add_row("4.", "Change UI Text Theme", f"[bold {theme}]{theme.title()}[/]")
     table.add_row("5.", "Change Window Background", f"[bold white]Active ({bg})[/]")
     table.add_row("6.", "Change Logo Animation", f"[bold white]Style {anim}[/]")
+    table.add_row("7.", "Select AI Model", f"[{theme}]{settings.get('custom_model', 'Default')}[/]" if settings.get('use_custom_api_key') else "[dim](Custom Key Only)[/dim]")
+    
     console.print(table)
     
-    choice = Prompt.ask("\nSelect option (or press Enter to exit)", choices=["1", "2", "3", "4", "5", "6", ""], default="")
+    choice = Prompt.ask("\nSelect option (or press Enter to exit)", choices=["1", "2", "3", "4", "5", "6", "7", ""], default="")
     
     if choice == "1":
         settings["use_custom_api_key"] = not settings.get("use_custom_api_key")
         save_settings(settings)
         console.print(f"[bold green]✓[/bold green] Engine switched.\n")
     elif choice == "2":
-        new_key = Prompt.ask("Enter OpenRouter API Key (Press Enter to cancel)", password=True).strip()
+        # --- THE UNIVERSAL API PROVIDER MENU ---
+        console.print("\n[dim]Select your API Provider:[/dim]")
+        console.print("  1. OpenRouter")
+        console.print("  2. Google Gemini (AI Studio)")
+        console.print("  3. Groq")
+        console.print("  4. OpenAI")
+        prov_choice = Prompt.ask("Select provider", choices=["1", "2", "3", "4"], default="1")
+        prov_map = {"1": "openrouter", "2": "gemini", "3": "groq", "4": "openai"}
+        
+        new_key = Prompt.ask("Enter Your API Key (Press Enter to cancel)", password=True).strip()
         if new_key:
+            settings["custom_api_provider"] = prov_map[prov_choice]
             settings["custom_api_key"] = new_key
             settings["use_custom_api_key"] = True
+            settings["custom_model"] = "" # Reset model when provider changes
             save_settings(settings)
-            console.print("[bold green]✓ Engine upgraded to Pro Mode with Custom Key.[/bold green]\n")
+            console.print(f"[bold green]✓ Engine upgraded to Pro Mode with {prov_map[prov_choice].title()} Key.[/bold green]\n")
         else:
             console.print("[bold yellow]⚠ Action canceled. API Key cannot be empty.[/bold yellow]\n")
     elif choice == "3":
@@ -333,6 +346,54 @@ def handle_settings():
         save_settings(settings)
         console.print(f"[bold green]✓ Boot animation updated to Style {anim_choice}![/bold green]\n")
         console.print("[dim](Type /clear to test it right now!)[/dim]\n")
+        
+    elif choice == "7":
+        if not settings.get("use_custom_api_key") or not settings.get("custom_api_key"):
+            console.print(f"\n[bold red]✗ You must set and activate a Custom API Key (Option 1 & 2) first![/bold red]\n")
+            return
+
+        provider = settings.get("custom_api_provider", "openrouter")
+        with console.status(f"[dim]Fetching live models from {provider.title()}...[/dim]", spinner="dots"):
+            from codeaois.models.llm_interface import fetch_available_models
+            available_models = fetch_available_models(settings["custom_api_key"], provider)
+            
+        if not available_models:
+            console.print("\n[bold red]✗ Failed to fetch models. Check your API key or internet.[/bold red]\n")
+            return
+            
+        console.print("\n[dim]Type a keyword to filter (e.g., 'claude', 'gpt', 'llama', 'gemini').[/dim]")
+        search_term = Prompt.ask(f"[bold {theme}]Search Models[/]").strip().lower()
+        
+        matches = [m for m in available_models if search_term in m.lower()]
+        
+        if not matches:
+            console.print(f"\n[bold red]✗ No models found containing '{search_term}'.[/bold red]\n")
+        else:
+            display_limit = 20
+            from rich import box
+            model_table = Table(title=f"\n[bold yellow]AI Model Marketplace ({provider.title()})[/bold yellow]", box=box.ROUNDED, expand=False)
+            model_table.add_column("No.", justify="right", style="cyan", no_wrap=True)
+            model_table.add_column("Provider/ID", style="magenta")
+            
+            for i, m in enumerate(matches[:display_limit]):
+                model_table.add_row(str(i + 1), m)
+                
+            console.print(model_table)
+            
+            if len(matches) > display_limit:
+                console.print(f"[dim]...and {len(matches) - display_limit} more hidden.[/dim]")
+                
+            selection = Prompt.ask(f"\n[bold {theme}]Select a number (1-{min(len(matches), display_limit)}) or press Enter to cancel[/]")
+            
+            if selection.isdigit():
+                idx = int(selection) - 1
+                if 0 <= idx < len(matches):
+                    selected_model = matches[idx]
+                    settings["custom_model"] = selected_model
+                    save_settings(settings)
+                    console.print(f"\n[bold green]✓ Active Model changed to:[/bold green] [bold white]{selected_model}[/bold white]\n")
+                else:
+                    console.print("\n[bold red]✗ Invalid selection.[/bold red]\n")
 
 def handle_marketplace():
     theme = get_theme()
@@ -454,7 +515,14 @@ def process_command(user_input: str):
         index_workspace()
         return
 
-    intent = analyze_intent(user_input)
+    # Intercept the /lite command before it hits the Supervisor
+    if user_input.lower().startswith("/lite "):
+        intent = "lite_code"
+        user_input = user_input[6:].strip() 
+    elif user_input.startswith("/"):
+        pass 
+    else:
+        intent = analyze_intent(user_input)
 
     if intent == "sys_exit":
         console.print(f"\n[{theme}]✦[/] [dim]Natural language 'exit' detected. Shutting down...[/dim]")
@@ -488,7 +556,6 @@ def process_command(user_input: str):
     project_tree = scan_project_structure()
     semantic_context = get_semantic_context(user_input)
     
-    # --- BUG FIX 1: Provide User's Name to AI ---
     profile = load_profile()
     user_name = profile.get("name", "Developer") if profile else "Developer"
     
@@ -530,46 +597,60 @@ def process_command(user_input: str):
             
         full_context = f"\n--- Project Structure ---\n{project_tree}\n" + (file_context if file_context else "") + deep_context
             
-        if intent in ["pip_agent", "terminal_agent", "git_agent"]:
-            try:
-                module = importlib.import_module(f"codeaois.agents.{intent}")
-                agent_func = getattr(module, f"generate_{intent.replace('_agent', '')}_code")
-                code_result = agent_func(user_input, full_context)
-            except Exception as e:
-                console.print(f"\n[bold red]✗ Agent Error:[/bold red] {e}\n")
-                return
-        else:
-            with console.status(f"[bold dim]✦ Orchestrating {intent} workflow...[/bold dim]", spinner="dots"):
-                if intent == "data_science":
-                    code_result = generate_ds_code(user_input, full_context)
-                elif intent == "code":
-                    code_result = generate_code(user_input, full_context)
-                else:
-                    try:
-                        module = importlib.import_module(f"codeaois.agents.{intent}")
-                        agent_func = getattr(module, f"generate_{intent.replace('_agent', '')}_code")
-                        code_result = agent_func(user_input, full_context)
-                    except ModuleNotFoundError:
-                        agent_name = intent.replace('_agent', '').title()
-                        console.print(f"\n[bold yellow]⚠ Agent Missing[/bold yellow]")
-                        console.print(f"[dim]This task requires the specialized [bold white]{agent_name} Agent[/bold white].[/dim]")
-                        console.print(f"[dim]Type [/dim][bold {theme}]/m[/bold {theme}][dim] to install it instantly from the Marketplace![/dim]\n")
-                        return
-                    except Exception as e:
-                        console.print(f"\n[bold red]✗ Agent Error:[/bold red] {e}\n")
-                        return        
-                    if intent in ["pip_agent", "terminal_agent", "git_agent"]:
-                        console.print("\n")
-                        if intent == "terminal_agent": panel_title = "Terminal Execution Log"
-                        elif intent == "git_agent": panel_title = "Git Execution Log"
-                        else: panel_title = "Pip Installation Log"
+# --- CATEGORY 1: Terminal Output Agents (No file saving) ---
+        if intent in ["pip_agent", "terminal_agent", "git_agent", "researcher_agent", "vision_agent", "scaffolder_agent"]:
+            with console.status(f"[bold dim]✦ Booting {intent.replace('_agent', '').title()} Engine...[/bold dim]", spinner="dots"):
+                try:
+                    module = importlib.import_module(f"codeaois.agents.{intent}")
+                    agent_func = getattr(module, f"generate_{intent.replace('_agent', '')}_code")
+                    code_result = agent_func(user_input, full_context)
+                except Exception as e:
+                    console.print(f"\n[bold red]✗ Agent Error:[/bold red] {e}\n")
+                    return
+            
+            console.print("\n")
+            if intent == "terminal_agent": panel_title = "Terminal Execution Log"
+            elif intent == "git_agent": panel_title = "Git Execution Log"
+            elif intent == "pip_agent": panel_title = "Pip Installation Log"
+            elif intent == "researcher_agent": panel_title = "🌐 Live Web Research"
+            elif intent == "vision_agent": panel_title = "👁️ Vision UI Analysis"
+            elif intent == "scaffolder_agent": panel_title = "🏗️ Project Scaffolder" # <-- Added this!
+            
+            console.print(Panel(Markdown(code_result), title=f"[bold {theme}]{panel_title}[/]", border_style=theme))
+            console.print("\n")
+            return
         
-                        console.print(Panel(Markdown(code_result), title=f"[bold {theme}]{panel_title}[/]", border_style=theme))
-                        console.print("\n")
-                        return
+# --- CATEGORY 2: File Writing Agents (Needs to save code) ---
+        with console.status(f"[bold dim]✦ Orchestrating {intent} workflow...[/bold dim]", spinner="dots"):
+            if intent == "data_science":
+                code_result = generate_ds_code(user_input, full_context)
+            elif intent == "code":
+                from codeaois.agents.coder_agent import generate_code
+                code_result = generate_code(user_input, full_context)
+            elif intent == "lite_code":
+                from codeaois.agents.coder_agent import generate_lite_code
+                code_result = generate_lite_code(user_input, full_context)
+            else:
+                try:
+                    module = importlib.import_module(f"codeaois.agents.{intent}")
+                    agent_func = getattr(module, f"generate_{intent.replace('_agent', '')}_code")
+                    code_result = agent_func(user_input, full_context)
+                except ModuleNotFoundError:
+                    agent_name = intent.replace('_agent', '').title()
+                    console.print(f"\n[bold yellow]⚠ Agent Missing[/bold yellow]")
+                    console.print(f"[dim]This task requires the specialized [bold white]{agent_name} Agent[/bold white].[/dim]")
+                    console.print(f"[dim]Type [/dim][bold {theme}]/m[/bold {theme}][dim] to install it instantly from the Marketplace![/dim]\n")
+                    return
+                except Exception as e:
+                    console.print(f"\n[bold red]✗ Agent Error:[/bold red] {e}\n")
+                    return
 
-        save_path = target_file if target_file else Prompt.ask(f"\n[bold {theme}]►[/bold {theme}] Output filename", default="output.py")
-        
+        # --- THE SAFETY CATCH ---
+        if code_result and "❌ **API" in code_result:
+            console.print(f"\n[bold red]FATAL ERROR ABORT:[/bold red] The AI failed to generate code. File writing aborted to protect your files.\n")
+            console.print(code_result) 
+            return 
+
         save_path = target_file if target_file else Prompt.ask(f"\n[bold {theme}]►[/bold {theme}] Output filename", default="output.py")
         
         success, ai_summary = extract_and_save_code(code_result, default_filename=save_path)
@@ -578,7 +659,6 @@ def process_command(user_input: str):
             console.print(f"\n[bold green]✓[/bold green] Wrote to {save_path}")
             console.print(Panel(Markdown(ai_summary), border_style="dim", expand=False))
         else:
-            # BUG FIX: If the AI forgot to use Markdown code blocks, force save the raw text anyway!
             with open(save_path, "w", encoding="utf-8") as f:
                 f.write(code_result)
             console.print(f"\n[bold yellow]⚠ AI formatting error, but forced write to {save_path}[/bold yellow]")
@@ -590,21 +670,20 @@ def process_command(user_input: str):
             if run_choice.lower() == 'y':
                 from codeaois.core.orchestrator import execute_with_autofix
                 
-                # Figure out which agent should fix the code
                 if intent == "data_science": fix_agent = generate_ds_code
                 elif intent == "code": fix_agent = generate_code
                 else: fix_agent = generate_code
                 
-                # Start the autonomous loop!
                 execute_with_autofix(save_path, fix_agent, full_context)
                 
         console.print("\n")
+
 def main():
-    global chat_history # --- BUG FIX 2: Explicitly declare the global variable so it can be reloaded ---
+    global chat_history 
     
     parser = argparse.ArgumentParser(description="CodeAOIS: Advanced AI Developer OS")
     parser.add_argument("prompt", nargs="*", help="Chat or command")
-    parser.add_argument("-v", "--version", action="version", version="CodeAOIS Core Engine v0.2.6")
+    parser.add_argument("-v", "--version", action="version", version="CodeAOIS Core Engine v0.3.0")
     args = parser.parse_args()
 
     apply_saved_background()
@@ -613,8 +692,6 @@ def main():
     if not profile:
         profile = run_login_flow()
         
-    # --- CRITICAL BUG FIX 2 UPDATE ---
-    # Refresh the in-memory chat_history from the file right here
     chat_history = load_history()
 
     if args.prompt:

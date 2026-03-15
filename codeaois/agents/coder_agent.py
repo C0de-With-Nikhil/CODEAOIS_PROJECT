@@ -1,34 +1,46 @@
-# codeaois/agents/coder_agent.py
 from codeaois.models.llm_interface import call_openrouter
+from rich.console import Console
+import time
 
+console = Console()
 
-def generate_code(user_prompt: str, file_context: str = "") -> str:
-    if file_context:
-        system_prompt = (
-            "You are the CodeAOIS Coder Agent. "
-            "1. You MUST output your code changes using the <<<<<<< SEARCH and >>>>>>> REPLACE format.\n"
-            "2. AFTER your code blocks, you MUST add the exact text '---SUMMARY---' on a new line.\n"
-            "3. AFTER the summary delimiter, write a brief, friendly explanation of how the code works and what you changed."
-        )
-    else:
-        system_prompt = (
-            "You are the CodeAOIS Coder Agent, an expert senior software engineer. "
-            "1. Output the raw, complete code first. Do not wrap the code in markdown blocks.\n"
-            "2. AFTER the code, you MUST add the exact text '---SUMMARY---' on a new line.\n"
-            "3. AFTER the summary delimiter, write a brief, friendly explanation of how the code works."
-        )
+def generate_code(user_input, full_context=""):
+    """Multi-Agent Swarm that plans, writes, and reviews code."""
+    
+    # --- AGENT 1: THE ARCHITECT ---
+    console.print(f"[dim]🧠 [Architect] Drafting system blueprint...[/dim]")
+    architect_sys = "You are a Senior Software Architect. Break the user's request down into a strict, bulleted, step-by-step implementation plan. Identify the best programming language if not specified. Do NOT write code. Only write the logical plan."
+    plan = call_openrouter(architect_sys, f"REQUEST: {user_input}\nCONTEXT: {full_context}", intent="chat", history=[])
+    
+    # Let the free API cool down!
+    time.sleep(8) 
+    
+    # --- AGENT 2: THE DEVELOPER ---
+    console.print(f"[dim]💻 [Developer] Writing code based on blueprint...[/dim]")
+    dev_sys = "You are an Elite Polyglot Software Engineer. Write the complete, functional code based EXACTLY on the Architect's plan. Return ONLY the final code inside a markdown block. Do not add explanations."
+    dev_prompt = f"ARCHITECT PLAN:\n{plan}\n\nWrite the code."
+    raw_code = call_openrouter(dev_sys, dev_prompt, intent="code", history=[])
+    
+    # Let the free API cool down again!
+    time.sleep(8) 
+    
+    # --- AGENT 3: THE QA TESTER ---
+    console.print(f"[dim]🔎 [QA Tester] Auditing code for bugs and syntax errors...[/dim]")
+    qa_sys = "You are a strict QA Code Reviewer. Review the provided code for logic errors, missing dependencies, or syntax issues. Fix any issues found. Return ONLY the final, perfect code inside a markdown block. No explanations."
+    qa_prompt = f"ORIGINAL REQUEST: {user_input}\n\nDRAFT CODE:\n{raw_code}\n\nReview and return the final bulletproof code."
+    final_code = call_openrouter(qa_sys, qa_prompt, intent="code", history=[])
+    
+    console.print("[bold green]✓ Swarm consensus reached![/bold green]")
+    
+    return final_code
 
-    full_prompt = user_prompt
-    if file_context:
-        full_prompt += f"\n\nHere are the existing files for context:\n{file_context}"
-
-    response = call_openrouter(system_prompt, full_prompt, intent="code")
-    return response.strip()
-
-
-class CoderAgent:
-    def execute(self, task: str) -> str:
-        """Execute a code generation task."""
-        if not task:
-            return "```text\nNo task provided to the coder agent.\n```"
-        return generate_code(str(task))
+def generate_lite_code(user_input, full_context=""):
+    """Single-shot coder that bypasses the Swarm to prevent API rate limits."""
+    console.print(f"[dim]⚡ [Fast Coder] Writing code in a single shot...[/dim]")
+    
+    dev_sys = """You are an Elite Software Engineer. Write the complete, functional code requested by the user. 
+    You MUST output the target filename at the very top of your response (e.g., `### Filename: clock.html`).
+    Then, provide ONLY the final code inside a markdown block. Do NOT add any conversational text or apologies."""
+    
+    # We use a single API call instead of 3, keeping you perfectly under the free rate limits!
+    return call_openrouter(dev_sys, f"REQUEST: {user_input}\nCONTEXT: {full_context}", intent="code", history=[])
